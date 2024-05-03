@@ -1,6 +1,4 @@
-import { IonBackButtonDelegateDirective } from "@ionic/angular/directives/navigation/ion-back-button";
-
-const places = [
+[
   {
     name: "City Centre Bahrain",
     region: "Capital",
@@ -1511,7 +1509,7 @@ const places = [
     },
     description:
       "Downtown Rotana is situated in the heart of Manama, offering stylish and contemporary accommodations. Ideal for both business and leisure travelers, the hotel features state-of-the-art facilities including meeting rooms, a fitness center, and a rooftop pool.",
-    comments: []],
+    comments: [],
     photos: [],
     totalComments: 0,
     imagePlace: "",

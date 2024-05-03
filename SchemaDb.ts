@@ -76,7 +76,7 @@ export interface Place {
   facilities?: number;
   convenience?: number;
   staff?: number;
-  duration?: number;
+  duration?: string;
   activityType?: string[];
   accessibility?: string[];
   whatToExpect?: string[];
@@ -100,7 +100,7 @@ export interface Place {
   amenities?: string[];
   roomType?: string[];
   locationType?: string;
-  additionalServices?: string;
+  additionalServices?: string[];
   languagesSpoken?: string[];
   hotelClass?: number;
 }
