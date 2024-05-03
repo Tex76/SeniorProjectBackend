@@ -3,7 +3,24 @@ import mongoose from "mongoose";
 import bcrypt from "bcrypt";
 import dotenv from "dotenv";
 import cors from "cors";
+import session from "express-session";
+import bodyParser from "body-parser";
 dotenv.config();
+const app = express();
+declare module "express-session" {
+  interface SessionData {
+    user: { [key: string]: any }; // can be any user object
+  }
+}
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+
+const corsOptions = {
+  origin: "*",
+  credentials: true,
+  optionSuccessStatus: 200,
+};
+
 const placeSchema = new mongoose.Schema({
   name: { type: String, required: true },
   region: { type: String },
@@ -130,11 +147,14 @@ const Photo = mongoose.model("Photo", PhotoSchema);
 const User = mongoose.model("User", UserSchema);
 const Trip = mongoose.model("Trip", TripSchema);
 
-const app = express();
+app.use(cors(corsOptions));
+
 app.use(
-  cors({
-    origin: "http://localhost:3000",
-    credentials: true,
+  session({
+    secret: "secret", // Use an environment variable for the secret
+    resave: false, // Don't save session if unmodified
+    saveUninitialized: false, // Don't create session until something stored
+    cookie: { secure: true, httpOnly: true }, // Enhance security by using secure cookies and HTTP only
   })
 );
 
@@ -189,16 +209,45 @@ app.post("/login", async (req, res) => {
     }
     const isMatch = await bcrypt.compare(password.trim(), user.password);
 
-    console.log("isMatch", isMatch);
     if (!isMatch) {
-      console.log("original password", password);
-      console.log("hashed password", user.password);
       return res.status(401).send("Login failed: incorrect password");
     }
+    req.session.user = { id: user._id };
+
     res.send("Login successful");
   } catch (err) {
     console.error("Login error", err);
     res.status(500).send("Internal server error");
+  }
+});
+
+app.get("/places/thingsToDo/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const place = await Place.findOne({ _id: id, type: "thingsToDo" });
+    if (!place) {
+      res.status(404).json({ message: "Place not found" });
+    } else {
+      res.json(place);
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+app.get("/places/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const places = await Place.find({ _id: id });
+    if (places.length === 0) {
+      res.status(404).json({ message: "Place not found" });
+    } else {
+      res.json(places[0]);
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Internal server error" });
   }
 });
 

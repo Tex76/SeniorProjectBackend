@@ -13,9 +13,9 @@ export interface User {
   email: string;
   placesVisited: number;
   badges: string[];
-  reviewComments: string[]; // Array of comment IDs
-  photosReview: string[]; // Array of photo IDs
-  trips: string[]; // Array of trip IDs
+  reviewComments: Comment[]; // Array of comment IDs
+  photosReview: Photo[]; // Array of photo IDs
+  trips: Trip[]; // Array of trip IDs
   runningTrip: string; // Reference to Trip
 }
 
@@ -24,21 +24,39 @@ export interface Comment {
   userID: string; // Reference to User
   placeID: string; // Reference to Place
   userName: string;
+  rankImage: string;
   userAvatar: string;
   contributionNumber: number;
   rank: number;
   rate: number;
   title: string;
-  dateOfWritten: Date;
+  writtenDate: Date;
   commentBody: string;
-  dateVisit: Date;
+  visitDate: Date;
   services: number;
-  roomQuality: number;
   facility: number;
   location: number;
-  cleanliness: number;
-  ambiance: number;
   commentValue: number;
+  score: number;
+
+  // Optional properties for ThingsToDo
+  locationRate?: number;
+  safety?: number;
+  facilities?: number;
+  convenience?: number;
+  staff?: number;
+
+  // Optional properties for ThingsToEat
+  foodQuality?: number;
+  valueForMoney?: number;
+  service?: number;
+  menuVariety?: number;
+  ambiance?: number;
+
+  // Optional properties for PlacesToStay
+  serviceRate?: number;
+  roomQuality?: number;
+  cleanliness?: number;
 }
 
 export interface Photo {
@@ -46,8 +64,13 @@ export interface Photo {
   placeID: string; // Reference to Place
   userID: string; // Reference to User
   userName: string;
+  rank: string;
+  contributionNumber: number;
+  rankImage: string;
+  userAvatar: string;
   dateOfTaken: Date;
   image: string; // Image URL or path
+  score: number;
 }
 
 export interface Place {
@@ -60,8 +83,8 @@ export interface Place {
   location: string;
   googleLocation: { lat: number; lng: number; placeId?: string };
   description: string;
-  comments: string[];
-  photos: string[];
+  comments: Comment[];
+  photos: Photo[];
   totalComments: number;
   imagePlace: string[];
   type: string;
@@ -69,6 +92,11 @@ export interface Place {
   email: string;
   phoneNumber: string;
   website: string;
+  exceptional: number;
+  great: number;
+  satisfactory: number;
+  poor: number;
+  bad: number;
 
   // Optional properties for ThingsToDo
   locationRate?: number;
