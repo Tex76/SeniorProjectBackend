@@ -3,7 +3,6 @@ import mongoose from "mongoose";
 import bcrypt from "bcrypt";
 import dotenv from "dotenv";
 import cors from "cors";
-import { register } from "module";
 dotenv.config();
 const placeSchema = new mongoose.Schema({
   name: { type: String, required: true },
@@ -90,39 +89,39 @@ const PhotoSchema = new mongoose.Schema({
   placeID: { type: String, required: true },
   userID: { type: String, required: true },
   userName: String,
-  dateOfTaken: Date,
-  image: String,
+  dateOfTaken: { type: Date, default: Date.now },
+  image: { type: String, default: "default-image.jpg" },
 });
 
 const UserSchema = new mongoose.Schema({
   name: { type: String, required: true },
-  userName: String,
-  password: String,
-  joinDate: Date,
-  rank: String,
-  points: Number,
-  email: String,
-  description: String,
-  contribution: Number,
-  comments: Number,
-  photos: Number,
-  placesVisited: Number,
-  badges: [String],
-  reviewComments: [String],
-  photosReview: [String],
-  trips: [String],
-  runningTrip: String,
+  userName: { type: String, default: "New User" },
+  password: String, // Passwords should always be provided explicitly and hashed
+  joinDate: { type: Date, default: Date.now }, // Automatically set the join date to the current date
+  rank: { type: String, default: "Explorer" }, // Default user ranks Explorer, Adventurer, Trailblazer
+  points: { type: Number, default: 0 }, // Start points at 0
+  email: String, // Email should be provided explicitly if required
+  description: { type: String, default: "No description provided." },
+  contribution: { type: Number, default: 0 }, // Default contribution score
+  comments: { type: Number, default: 0 }, // Default number of comments
+  photos: { type: Number, default: 0 }, // Default number of photos
+  placesVisited: { type: Number, default: 0 }, // Default number of places visited
+  badges: { type: [String], default: [] }, // Default to an empty array of badges
+  reviewComments: { type: [String], default: [] }, // Default to an empty array for review comments
+  photosReview: { type: [String], default: [] }, // Default to an empty array for photo reviews
+  trips: { type: [String], default: [] }, // Default to an empty array of trips
+  runningTrip: { type: String, default: "No active trip" }, // Default to 'No active trip' if none is running
 });
 
 const TripSchema = new mongoose.Schema({
   userID: { type: String, required: true },
-  tripName: String,
-  region: [String],
-  totalDays: Number,
-  description: String,
-  imageTrip: String,
-  likedPlaces: [String],
-  days: [[String]],
+  tripName: { type: String, default: "New Trip" }, // Default value for tripName
+  region: { type: [String], default: [] }, // Default value as an empty array
+  totalDays: { type: Number, default: 1 }, // Default value for totalDays
+  description: { type: String, default: "No description provided." }, // Default description
+  imageTrip: { type: String, default: "default-image.jpg" }, // Default image path
+  likedPlaces: { type: [String], default: [] }, // Default as empty array
+  days: { type: [[String]], default: [[]] }, // Nested array with a default empty array
 });
 
 const Place = mongoose.model("Place", placeSchema);
@@ -158,8 +157,14 @@ app.post("/signUp", async (req, res) => {
     if (check) {
       return res.status(400).send("User already exists");
     }
-    const hashedPassword = await bcrypt.hash(password, 10); // 10 is the saltRounds
-    const user = new User({ email, password: hashedPassword, name, username });
+    const hashedPassword = await bcrypt.hash(password.trim(), 10);
+    // 10 is the saltRounds
+    const user = new User({
+      email,
+      password: hashedPassword,
+      name,
+      userName: username,
+    });
     await user.save();
 
     console.log("Sign up successful", user);
@@ -182,11 +187,14 @@ app.post("/login", async (req, res) => {
         .status(401)
         .send("Login failed: user not found or password is not a string");
     }
-    const isMatch = await bcrypt.compare(password, user.password);
+    const isMatch = await bcrypt.compare(password.trim(), user.password);
+
+    console.log("isMatch", isMatch);
     if (!isMatch) {
+      console.log("original password", password);
+      console.log("hashed password", user.password);
       return res.status(401).send("Login failed: incorrect password");
     }
-    console.log("Login successful", { email });
     res.send("Login successful");
   } catch (err) {
     console.error("Login error", err);
