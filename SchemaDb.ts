@@ -1,7 +1,7 @@
 import { Document, Types } from "mongoose";
 
 export interface User extends Document {
-  _id: Types.ObjectId; // Assuming ObjectID from MongoDB
+  _id?: Types.ObjectId; // Assuming ObjectID from MongoDB
   name: string;
   userName: string;
   password: string; // Hashed password string
@@ -22,28 +22,26 @@ export interface User extends Document {
 }
 
 export interface Comment extends Document {
-  _id: Types.ObjectId; // Assuming ObjectID from MongoDB
+  _id?: Types.ObjectId;
   userID: Types.ObjectId; // Reference to User
   placeID: Types.ObjectId; // Reference to Place
-  userName: string;
-  rankImage: string;
-  userAvatar: string;
-  contributionNumber: number;
-  rank: number;
+  userName?: string;
+  rankImage?: string;
+  userAvatar?: string;
+  contributionNumber?: number;
+  rank?: number;
   rate: number;
   title: string;
   writtenDate: Date;
   commentBody: string;
   visitDate: Date;
-  services: number;
-  facility: number;
-  location: number;
-  commentValue: number;
+  services?: number;
   score: number;
-  whithWhom: "Solo" | "Duo" | "Family" | "Friends";
+  whithWhom: string;
+  helpfulTip: string;
 
   // Optional properties for ThingsToDo
-  locationRate?: number;
+  location?: number;
   safety?: number;
   facilities?: number;
   convenience?: number;
@@ -63,21 +61,21 @@ export interface Comment extends Document {
 }
 
 export interface Photo extends Document {
-  _id: Types.ObjectId;
+  _id?: Types.ObjectId;
   placeID: Types.ObjectId; // Reference to Place
   userID: Types.ObjectId; // Reference to User
-  userName: string;
-  rank: string;
-  contributionNumber: number;
-  rankImage: string;
-  userAvatar: string;
+  userName?: string;
+  rank?: string;
+  contributionNumber?: number;
+  rankImage?: string;
+  userAvatar?: string;
   dateOfTaken: Date;
   image: string; // Image URL or path
   score: number;
 }
 
 export interface Place extends Document {
-  _id: Types.ObjectId;
+  _id?: Types.ObjectId;
   name: string;
   region: string;
   category: "thingsToDo" | "PlacesToStay" | "thingsToEat";
@@ -137,7 +135,7 @@ export interface Place extends Document {
 }
 
 export interface Trip extends Document {
-  _id: Types.ObjectId;
+  _id?: Types.ObjectId;
   userID: Types.ObjectId;
   tripName: string;
   region: string[];

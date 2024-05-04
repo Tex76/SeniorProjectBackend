@@ -5,21 +5,35 @@ import dotenv from "dotenv";
 import cors from "cors";
 import session from "express-session";
 import bodyParser from "body-parser";
+import cookieParser from "cookie-parser";
 dotenv.config();
 const app = express();
+const corsOptions = {
+  origin: "http://localhost:3000", // Ensure this matches the exact URL of your frontend
+  credentials: true, // Essential for cookies to be sent and received with requests
+  optionSuccessStatus: 200,
+  methods: ["POST", "PUT", "GET", "OPTIONS", "HEAD"],
+};
+
 declare module "express-session" {
   interface SessionData {
-    user: { [key: string]: any }; // can be any user object
+    user?: { id: Types.ObjectId; [key: string]: any };
   }
 }
+app.use(cookieParser());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.json());
+app.use(cors(corsOptions));
 
-const corsOptions = {
-  origin: "*",
-  credentials: true,
-  optionSuccessStatus: 200,
-};
+app.use(
+  session({
+    secret: "your_secret",
+    resave: false,
+    saveUninitialized: true,
+    cookie: { maxAge: 1000 * 60 * 60 * 24 * 7, secure: false }, // set to true if you're using https
+  })
+);
 
 const placeSchema = new mongoose.Schema({
   name: { type: String, required: true },
@@ -38,6 +52,7 @@ const placeSchema = new mongoose.Schema({
   },
   description: String,
   comments: [Types.ObjectId],
+  // [ObjecId("id"), ObjecId("id"), ObjecId("id")]
   photos: [Types.ObjectId],
   totalComments: Number,
   imagePlace: [String],
@@ -60,7 +75,7 @@ const placeSchema = new mongoose.Schema({
 
   // Optional fields for ThingsToEat
   foodQuality: Number,
-  valueForMoney: Number,
+  money: Number,
   service: Number,
   menuVariety: Number,
   ambiance: Number,
@@ -96,9 +111,9 @@ const CommentSchema = new Schema({
   location: Number,
   withWhom: {
     type: String,
-    enum: ["Solo", "Duo", "Family", "Friends"],
     default: "Solo", // Optional default value
   },
+  helpfulTip: { type: String, default: "No helpful tips provided." },
 
   score: { type: Number, default: 0 },
 
@@ -110,6 +125,7 @@ const CommentSchema = new Schema({
   staff: { type: Number, default: 0 },
 
   // Optional properties for ThingsToEat
+
   foodQuality: { type: Number, default: 0 },
   valueForMoney: { type: Number, default: 0 },
   service: { type: Number, default: 0 },
@@ -118,7 +134,7 @@ const CommentSchema = new Schema({
 
   // Optional properties for PlacesToStay
 
-  //service and location rate also
+  //ambience and location rate also
   serviceRate: { type: Number, default: 0 },
   roomQuality: { type: Number, default: 0 },
   cleanliness: { type: Number, default: 0 }, // Note: this field was already declared, consider renaming if different meanings are intended
@@ -171,17 +187,6 @@ const Photo = mongoose.model("Photo", PhotoSchema);
 const User = mongoose.model("User", UserSchema);
 const Trip = mongoose.model("Trip", TripSchema);
 
-app.use(cors(corsOptions));
-
-app.use(
-  session({
-    secret: "secret", // Use an environment variable for the secret
-    resave: false, // Don't save session if unmodified
-    saveUninitialized: false, // Don't create session until something stored
-    cookie: { secure: true, httpOnly: true }, // Enhance security by using secure cookies and HTTP only
-  })
-);
-
 const mongoUrl = process.env.MONGO_URL;
 if (!mongoUrl) {
   console.error("MONGO_URL environment variable is not set");
@@ -192,7 +197,15 @@ mongoose
   .connect(mongoUrl)
   .then(() => console.log("Connected to MongoDB"))
   .catch((err) => console.error("MongoDB connection error", err));
-app.use(express.json());
+
+app.get("/getSession", (req, res) => {
+  console.log("Session user:", req.session.user); // Check what is actually in the session
+  if (req.session.user) {
+    res.send(req.session.user);
+  } else {
+    res.status(401).send("No user session");
+  }
+});
 
 app.post("/signUp", async (req, res) => {
   try {
@@ -220,31 +233,32 @@ app.post("/signUp", async (req, res) => {
 });
 
 app.post("/login", async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    if (typeof password !== "string") {
-      return res.status(400).send("Bad request: password must be a string");
-    }
-    const user = await User.findOne({ email });
-    if (!user || typeof user.password !== "string") {
-      return res
-        .status(401)
-        .send("Login failed: user not found or password is not a string");
-    }
-    const isMatch = await bcrypt.compare(password.trim(), user.password);
+  const { email, password } = req.body;
+  if (typeof password !== "string") {
+    return res.status(400).send("Bad request: password must be a string");
+  }
+  const user = await User.findOne({ email });
+  if (!user || typeof user.password !== "string") {
+    return res
+      .status(401)
+      .send("Login failed: user not found or password is not a string");
+  }
+  const isMatch = await bcrypt.compare(password.trim(), user.password);
 
-    if (!isMatch) {
-      return res.status(401).send("Login failed: incorrect password");
-    }
-    req.session.user = { id: user._id };
-
-    res.send("Login successful");
-  } catch (err) {
-    console.error("Login error", err);
-    res.status(500).send("Internal server error");
+  if (!isMatch) {
+    return res.status(401).send("Login failed: incorrect password");
+  } else {
+    req.session.user = { id: user._id, name: user.name, email: user.email };
+    req.session.save((err) => {
+      // Ensure session is saved before responding
+      if (err) {
+        console.error("Session save error:", err);
+        return res.status(500).send("Failed to save session");
+      }
+      res.send("Logged in");
+    });
   }
 });
-
 app.get("/places/:id", async (req, res) => {
   const { id } = req.params;
 
@@ -263,6 +277,7 @@ app.get("/places/:id", async (req, res) => {
           as: "comments",
         },
       },
+
       {
         $lookup: {
           from: "photos", // Ensure this matches the name of your photos collection
