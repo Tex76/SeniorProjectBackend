@@ -1,5 +1,7 @@
-export interface User {
-  _id: string; // Assuming ObjectID from MongoDB
+import { Document, Types } from "mongoose";
+
+export interface User extends Document {
+  _id: Types.ObjectId; // Assuming ObjectID from MongoDB
   name: string;
   userName: string;
   password: string; // Hashed password string
@@ -19,10 +21,10 @@ export interface User {
   runningTrip: string; // Reference to Trip
 }
 
-export interface Comment {
-  _id: string; // Assuming ObjectID from MongoDB
-  userID: string; // Reference to User
-  placeID: string; // Reference to Place
+export interface Comment extends Document {
+  _id: Types.ObjectId; // Assuming ObjectID from MongoDB
+  userID: Types.ObjectId; // Reference to User
+  placeID: Types.ObjectId; // Reference to Place
   userName: string;
   rankImage: string;
   userAvatar: string;
@@ -38,6 +40,7 @@ export interface Comment {
   location: number;
   commentValue: number;
   score: number;
+  whithWhom: "Solo" | "Duo" | "Family" | "Friends";
 
   // Optional properties for ThingsToDo
   locationRate?: number;
@@ -59,10 +62,10 @@ export interface Comment {
   cleanliness?: number;
 }
 
-export interface Photo {
-  _id: string;
-  placeID: string; // Reference to Place
-  userID: string; // Reference to User
+export interface Photo extends Document {
+  _id: Types.ObjectId;
+  placeID: Types.ObjectId; // Reference to Place
+  userID: Types.ObjectId; // Reference to User
   userName: string;
   rank: string;
   contributionNumber: number;
@@ -73,8 +76,8 @@ export interface Photo {
   score: number;
 }
 
-export interface Place {
-  _id: string;
+export interface Place extends Document {
+  _id: Types.ObjectId;
   name: string;
   region: string;
   category: "thingsToDo" | "PlacesToStay" | "thingsToEat";
@@ -133,9 +136,9 @@ export interface Place {
   hotelClass?: number;
 }
 
-export interface Trip {
-  _id: string;
-  userID: string;
+export interface Trip extends Document {
+  _id: Types.ObjectId;
+  userID: Types.ObjectId;
   tripName: string;
   region: string[];
   toatlDays: number;

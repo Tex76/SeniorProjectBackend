@@ -1,5 +1,5 @@
 import express from "express";
-import mongoose from "mongoose";
+import mongoose, { Schema, Types } from "mongoose";
 import bcrypt from "bcrypt";
 import dotenv from "dotenv";
 import cors from "cors";
@@ -37,8 +37,8 @@ const placeSchema = new mongoose.Schema({
     placeId: String, // Optional Google Place ID
   },
   description: String,
-  comments: [String],
-  photos: [String],
+  comments: [Types.ObjectId],
+  photos: [Types.ObjectId],
   totalComments: Number,
   imagePlace: [String],
   type: String,
@@ -82,9 +82,9 @@ const placeSchema = new mongoose.Schema({
   hotelClass: Number,
 });
 
-const CommentSchema = new mongoose.Schema({
-  userID: { type: String, required: true },
-  placeID: { type: String, required: true },
+const CommentSchema = new Schema({
+  userID: { type: Types.ObjectId, required: true, ref: "User" },
+  placeID: { type: Types.ObjectId, required: true, ref: "Place" },
   rank: Number,
   rate: Number,
   title: String,
@@ -92,22 +92,46 @@ const CommentSchema = new mongoose.Schema({
   commentBody: String,
   dateVisit: Date,
   services: Number,
-  roomQuality: Number,
   facility: Number,
   location: Number,
-  cleanliness: Number,
-  ambiance: Number,
-  commentValue: Number,
-});
+  withWhom: {
+    type: String,
+    enum: ["Solo", "Duo", "Family", "Friends"],
+    default: "Solo", // Optional default value
+  },
 
+  score: { type: Number, default: 0 },
+
+  // Optional properties for ThingsToDo
+  locationRate: { type: Number, default: 0 }, // Provide defaults if these are optional
+  safety: { type: Number, default: 0 },
+  facilities: { type: Number, default: 0 },
+  convenience: { type: Number, default: 0 },
+  staff: { type: Number, default: 0 },
+
+  // Optional properties for ThingsToEat
+  foodQuality: { type: Number, default: 0 },
+  valueForMoney: { type: Number, default: 0 },
+  service: { type: Number, default: 0 },
+  menuVariety: { type: Number, default: 0 },
+  ambiance: { type: Number, default: 0 },
+
+  // Optional properties for PlacesToStay
+
+  //service and location rate also
+  serviceRate: { type: Number, default: 0 },
+  roomQuality: { type: Number, default: 0 },
+  cleanliness: { type: Number, default: 0 }, // Note: this field was already declared, consider renaming if different meanings are intended
+});
 // images/photo.png
 
 const PhotoSchema = new mongoose.Schema({
-  placeID: { type: String, required: true },
-  userID: { type: String, required: true },
+  placeID: { type: Types.ObjectId, required: true },
+  userID: { type: Types.ObjectId, required: true },
   userName: String,
   dateOfTaken: { type: Date, default: Date.now },
   image: { type: String, default: "default-image.jpg" },
+  score: { type: Number, default: 0 },
 });
 
 const UserSchema = new mongoose.Schema({
@@ -124,20 +148,20 @@ const UserSchema = new mongoose.Schema({
   photos: { type: Number, default: 0 }, // Default number of photos
   placesVisited: { type: Number, default: 0 }, // Default number of places visited
   badges: { type: [String], default: [] }, // Default to an empty array of badges
-  reviewComments: { type: [String], default: [] }, // Default to an empty array for review comments
-  photosReview: { type: [String], default: [] }, // Default to an empty array for photo reviews
-  trips: { type: [String], default: [] }, // Default to an empty array of trips
+  reviewComments: { type: [Types.ObjectId], default: [] }, // Default to an empty array for review comments
+  photosReview: { type: [Types.ObjectId], default: [] }, // Default to an empty array for photo reviews
+  trips: { type: [Types.ObjectId], default: [] }, // Default to an empty array of trips
   runningTrip: { type: String, default: "No active trip" }, // Default to 'No active trip' if none is running
 });
 
 const TripSchema = new mongoose.Schema({
-  userID: { type: String, required: true },
+  userID: { type: Types.ObjectId, required: true },
   tripName: { type: String, default: "New Trip" }, // Default value for tripName
   region: { type: [String], default: [] }, // Default value as an empty array
   totalDays: { type: Number, default: 1 }, // Default value for totalDays
   description: { type: String, default: "No description provided." }, // Default description
   imageTrip: { type: String, default: "default-image.jpg" }, // Default image path
-  likedPlaces: { type: [String], default: [] }, // Default as empty array
+  likedPlaces: { type: [Types.ObjectId], default: [] }, // Default as empty array
   days: { type: [[String]], default: [[]] }, // Nested array with a default empty array
 });
 
@@ -221,33 +245,82 @@ app.post("/login", async (req, res) => {
   }
 });
 
-app.get("/places/thingsToDo/:id", async (req, res) => {
-  const { id } = req.params;
-  try {
-    const place = await Place.findOne({ _id: id, type: "thingsToDo" });
-    if (!place) {
-      res.status(404).json({ message: "Place not found" });
-    } else {
-      res.json(place);
-    }
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
-
 app.get("/places/:id", async (req, res) => {
   const { id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    console.log(`${id} is not a valid ObjectId`);
+    return res.status(400).json({ message: `${id} is not a valid ObjectId` });
+  }
   try {
-    const places = await Place.find({ _id: id });
-    if (places.length === 0) {
-      res.status(404).json({ message: "Place not found" });
+    const results = await Place.aggregate([
+      { $match: { _id: new mongoose.Types.ObjectId(id) } },
+      {
+        $lookup: {
+          from: "comments", // Ensure this matches the name of your comments collection
+          localField: "comments",
+          foreignField: "_id",
+          as: "comments",
+        },
+      },
+      {
+        $lookup: {
+          from: "photos", // Ensure this matches the name of your photos collection
+          localField: "photos",
+          foreignField: "_id",
+          as: "photos",
+        },
+      },
+      {
+        $unwind: { path: "$comments", preserveNullAndEmptyArrays: true },
+      },
+      {
+        $sort: { "comments.score": -1 },
+      },
+      {
+        $group: {
+          _id: "$_id",
+          root: { $mergeObjects: "$$ROOT" },
+          comments: { $push: "$comments" },
+        },
+      },
+      {
+        $replaceRoot: {
+          newRoot: {
+            $mergeObjects: ["$root", "$$ROOT"],
+          },
+        },
+      },
+      {
+        $unwind: { path: "$photos", preserveNullAndEmptyArrays: true },
+      },
+      {
+        $sort: { "photos.score": -1 },
+      },
+      {
+        $group: {
+          _id: "$_id",
+          root: { $mergeObjects: "$$ROOT" },
+          photos: { $push: "$photos" },
+        },
+      },
+      {
+        $replaceRoot: {
+          newRoot: {
+            $mergeObjects: ["$root", "$$ROOT"],
+          },
+        },
+      },
+    ]);
+
+    if (results.length === 0) {
+      return res.status(404).json({ message: "Place not found" });
     } else {
-      res.json(places[0]);
+      return res.json(results[0]); // Since we are doing a findOne equivalent
     }
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
