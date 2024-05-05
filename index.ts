@@ -3,9 +3,9 @@ import mongoose, { Schema, Types } from "mongoose";
 import bcrypt from "bcrypt";
 import dotenv from "dotenv";
 import cors from "cors";
-import session from "express-session";
 import bodyParser from "body-parser";
 import cookieParser from "cookie-parser";
+import jwt from "jsonwebtoken";
 dotenv.config();
 const app = express();
 const corsOptions = {
@@ -15,25 +15,14 @@ const corsOptions = {
   methods: ["POST", "PUT", "GET", "OPTIONS", "HEAD"],
 };
 
-declare module "express-session" {
-  interface SessionData {
-    user?: { id: Types.ObjectId; [key: string]: any };
-  }
-}
 app.use(cookieParser());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(cors(corsOptions));
 
-app.use(
-  session({
-    secret: "your_secret",
-    resave: false,
-    saveUninitialized: true,
-    cookie: { maxAge: 1000 * 60 * 60 * 24 * 7, secure: false }, // set to true if you're using https
-  })
-);
+const bcryptSalt = bcrypt.genSaltSync(10);
+const jwtSecret = "secret-key";
 
 const placeSchema = new mongoose.Schema({
   name: { type: String, required: true },
@@ -154,7 +143,8 @@ const UserSchema = new mongoose.Schema({
   name: { type: String, required: true },
   userName: { type: String, default: "New User" },
   password: String, // Passwords should always be provided explicitly and hashed
-  joinDate: { type: Date, default: Date.now }, // Automatically set the join date to the current date
+  joinDate: { type: Date, default: Date.now },
+  avatarImage: { type: String, default: "avatarImage.jpg" }, // Automatically set the join date to the current date
   rank: { type: String, default: "Explorer" }, // Default user ranks Explorer, Adventurer, Trailblazer
   points: { type: Number, default: 0 }, // Start points at 0
   email: String, // Email should be provided explicitly if required
@@ -198,15 +188,6 @@ mongoose
   .then(() => console.log("Connected to MongoDB"))
   .catch((err) => console.error("MongoDB connection error", err));
 
-app.get("/getSession", (req, res) => {
-  console.log("Session user:", req.session.user); // Check what is actually in the session
-  if (req.session.user) {
-    res.send(req.session.user);
-  } else {
-    res.status(401).send("No user session");
-  }
-});
-
 app.post("/signUp", async (req, res) => {
   try {
     const { name, username, email, password } = req.body;
@@ -214,7 +195,7 @@ app.post("/signUp", async (req, res) => {
     if (check) {
       return res.status(400).send("User already exists");
     }
-    const hashedPassword = await bcrypt.hash(password.trim(), 10);
+    const hashedPassword = await bcrypt.hash(password.trim(), bcryptSalt);
     // 10 is the saltRounds
     const user = new User({
       email,
@@ -248,17 +229,22 @@ app.post("/login", async (req, res) => {
   if (!isMatch) {
     return res.status(401).send("Login failed: incorrect password");
   } else {
-    req.session.user = { id: user._id, name: user.name, email: user.email };
-    req.session.save((err) => {
-      // Ensure session is saved before responding
-      if (err) {
-        console.error("Session save error:", err);
-        return res.status(500).send("Failed to save session");
+    jwt.sign(
+      { id: user._id, email: user.email, avatar: user.avatarImage },
+      jwtSecret,
+      { expiresIn: "1h" },
+      (err: Error | null, token: string | undefined) => {
+        if (err) {
+          console.error("JWT sign error:", err);
+          return res.status(500).send("Failed to sign token");
+        }
+        res.cookie("token", token, { httpOnly: true }).json(user);
+        res.status(200).send("Login correct and token set");
       }
-      res.send("Logged in");
-    });
+    );
   }
 });
+
 app.get("/places/:id", async (req, res) => {
   const { id } = req.params;
 
