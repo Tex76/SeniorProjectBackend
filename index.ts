@@ -230,7 +230,14 @@ app.post("/login", async (req, res) => {
     return res.status(401).send("Login failed: incorrect password");
   } else {
     jwt.sign(
-      { id: user._id, email: user.email, avatar: user.avatarImage },
+      {
+        email: user.email,
+        name: user.name,
+        id: user._id,
+        points: user.points,
+        rank: user.rank,
+        avatarImage: user.avatarImage,
+      },
       jwtSecret,
       { expiresIn: "1h" },
       (err: Error | null, token: string | undefined) => {
@@ -323,6 +330,24 @@ app.get("/places/:id", async (req, res) => {
     console.error(err);
     return res.status(500).json({ message: "Internal server error" });
   }
+});
+
+app.get("/profile", async (req, res) => {
+  const { token } = req.cookies;
+  if (token) {
+    jwt.verify(token, jwtSecret, {}, (err, user) => {
+      if (err) {
+        console.error("JWT verify error:", err);
+        return res.status(401).send("Unauthorized");
+      } else {
+        return res.json(user);
+      }
+    });
+  }
+});
+
+app.post("/logout", (req, res) => {
+  res.clearCookie("token").send("Logged out");
 });
 
 app.listen(4000, () => console.log("App listening on port 4000!"));
