@@ -188,6 +188,8 @@ mongoose
   .then(() => console.log("Connected to MongoDB"))
   .catch((err) => console.error("MongoDB connection error", err));
 
+
+
 app.post("/signUp", async (req, res) => {
   try {
     const { name, username, email, password } = req.body;
@@ -348,6 +350,17 @@ app.get("/profile", async (req, res) => {
 
 app.post("/logout", (req, res) => {
   res.clearCookie("token").send("Logged out");
+});
+
+// Used For data fetching Search Bar in the frontend
+app.get('/api/data', async (_, res) => {
+  try {
+    const data: Array<typeof Place> = await Place.find({});
+    res.json(data);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(err);
+  }
 });
 
 app.listen(4000, () => console.log("App listening on port 4000!"));
