@@ -149,13 +149,18 @@ const UserSchema = new mongoose.Schema({
   points: { type: Number, default: 0 }, // Start points at 0
   email: String, // Email should be provided explicitly if required
   description: { type: String, default: "No description provided." },
-  contribution: { type: Number, default: 0 }, // Default contribution score
-  comments: { type: Number, default: 0 }, // Default number of comments
-  photos: { type: Number, default: 0 }, // Default number of photos
+  contribution: { type: Number, default: 0 },
+  comments: { type: Number, default: 0 },
+  photos: { type: Number, default: 0 },
+  reviewComments: {
+    type: [Schema.Types.ObjectId],
+    ref: "Comment",
+    default: [],
+  },
+  photosReview: { type: [Schema.Types.ObjectId], ref: "Photo", default: [] },
   placesVisited: { type: Number, default: 0 }, // Default number of places visited
   badges: { type: [String], default: [] }, // Default to an empty array of badges
-  reviewComments: { type: [Types.ObjectId], default: [] }, // Default to an empty array for review comments
-  photosReview: { type: [Types.ObjectId], default: [] }, // Default to an empty array for photo reviews
+
   trips: { type: [Types.ObjectId], default: [] }, // Default to an empty array of trips
   runningTrip: { type: String, default: "No active trip" }, // Default to 'No active trip' if none is running
   rankImage: { type: String, default: "ranks/rankImagelevelThree.jpg" },
@@ -170,6 +175,13 @@ const TripSchema = new mongoose.Schema({
   imageTrip: { type: String, default: "default-image.jpg" }, // Default image path
   likedPlaces: { type: [Types.ObjectId], default: [] }, // Default as empty array
   days: { type: [[String]], default: [[]] }, // Nested array with a default empty array
+});
+
+UserSchema.pre("save", function (next) {
+  this.comments = this.reviewComments.length;
+  this.photos = this.photosReview.length;
+  this.contribution = this.comments + this.photos;
+  next();
 });
 
 const Place = mongoose.model("Place", placeSchema);
@@ -188,8 +200,6 @@ mongoose
   .connect(mongoUrl)
   .then(() => console.log("Connected to MongoDB"))
   .catch((err) => console.error("MongoDB connection error", err));
-
-
 
 app.post("/signUp", async (req, res) => {
   try {
@@ -389,9 +399,8 @@ app.post("/logout", (req, res) => {
   res.clearCookie("token").send("Logged out");
 });
 
-
 // Used For data fetching Search Bar in the frontend
-app.get('/api/data', async (_, res) => {
+app.get("/api/data", async (_, res) => {
   try {
     const data: Array<typeof Place> = await Place.find({});
     res.json(data);
@@ -399,7 +408,7 @@ app.get('/api/data', async (_, res) => {
     console.error(err);
     res.status(500).send(err);
   }
-}
+});
 
 app.post("/setComment", async (req, res) => {
   const placeInfo = await Place.findById(req.body.placeID);
@@ -436,7 +445,7 @@ app.post("/setComment", async (req, res) => {
       withWhom,
     });
 
-    await comment.save().then((comment) => {
+    comment.save().then((comment) => {
       const commentID = comment._id;
       Place.findByIdAndUpdate(
         placeID,
@@ -445,12 +454,12 @@ app.post("/setComment", async (req, res) => {
       ).then((place) => {
         console.log("Comment saved in place", place);
       });
-      User.findByIdAndUpdate(
-        userID,
-        { $push: { reviewComments: commentID } },
-        { new: true }
-      ).then((user) => {
-        console.log("Comment saved in user", user);
+
+      User.findById(userID).then((user: any) => {
+        user.reviewComments.push(commentID);
+        user.save().then((updatedUser: any) => {
+          console.log("Comment saved in user", updatedUser);
+        });
       });
     });
   } else if (placeInfo?.category === "thingsToEat") {
@@ -466,7 +475,6 @@ app.post("/setComment", async (req, res) => {
       valueForMoney,
       menuVariety,
       ambiance,
-
       writtenDate,
       withWhom,
     } = req.body;
@@ -486,8 +494,22 @@ app.post("/setComment", async (req, res) => {
       writtenDate,
       withWhom,
     });
-    await comment.save().then((comment) => {
-      console.log("Comment saved", comment);
+    comment.save().then((comment) => {
+      const commentID = comment._id;
+      Place.findByIdAndUpdate(
+        placeID,
+        { $push: { comments: commentID } },
+        { new: true }
+      ).then((place) => {
+        console.log("Comment saved in place", place);
+      });
+
+      User.findById(userID).then((user: any) => {
+        user.reviewComments.push(commentID);
+        user.save().then((updatedUser: any) => {
+          console.log("Comment saved in user", updatedUser);
+        });
+      });
     });
   } else {
     const {
@@ -521,13 +543,26 @@ app.post("/setComment", async (req, res) => {
       withWhom,
     });
 
-    await comment.save().then((comment) => {
-      console.log("Comment saved", comment);
+    comment.save().then((comment) => {
+      const commentID = comment._id;
+      Place.findByIdAndUpdate(
+        placeID,
+        { $push: { comments: commentID } },
+        { new: true }
+      ).then((place) => {
+        console.log("Comment saved in place", place);
+      });
+
+      User.findById(userID).then((user: any) => {
+        user.reviewComments.push(commentID);
+        user.save().then((updatedUser: any) => {
+          console.log("Comment saved in user", updatedUser);
+        });
+      });
     });
   }
 
   res.send("trying to save the comment");
-
 });
 
 app.listen(4000, () => console.log("App listening on port 4000!"));
