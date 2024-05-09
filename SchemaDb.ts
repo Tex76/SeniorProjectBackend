@@ -55,7 +55,9 @@ export interface Comment extends Document {
   ambiance?: number;
 
   // Optional properties for PlacesToStay
-  serviceRate?: number;
+  // service
+  // location
+  // facilities
   roomQuality?: number;
   cleanliness?: number;
 }
