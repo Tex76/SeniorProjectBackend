@@ -172,7 +172,7 @@ const TripSchema = new mongoose.Schema({
   region: { type: [String], default: [] }, // Default value as an empty array
   totalDays: { type: Number, default: 1 }, // Default value for totalDays
   description: { type: String, default: "No description provided." }, // Default description
-  imageTrip: { type: String, default: "default-image.jpg" }, // Default image path
+  imageTrip: { type: String, default: "trips/tripImage.jpg" }, // Default image path
   likedPlaces: { type: [Types.ObjectId], default: [] }, // Default as empty array
   days: { type: [[String]], default: [[]] }, // Nested array with a default empty array
 });
@@ -565,4 +565,130 @@ app.post("/setComment", async (req, res) => {
   res.send("trying to save the comment");
 });
 
+app.get("/user/trips/:id", (req, res) => {
+  const { id } = req.params;
+  User.findById(id)
+    .populate("trips")
+    .then((user: any) => {
+      if (user) res.json(user.trips);
+    });
+});
+app.post("/trips", async (req, res) => {
+  const { userID, tripName, region, days, description } = req.body;
+  const trip = new Trip({
+    userID,
+    tripName,
+    region,
+    totalDays: days,
+    description,
+  });
+  trip.save().then((trip) => {
+    User.findByIdAndUpdate(
+      userID,
+      { $push: { trips: trip._id } },
+      { new: true }
+    ).then((user) => {
+      console.log("Trip saved in user", user);
+    });
+    res.send({ id: trip._id });
+  });
+});
+
+app.get("/trips/:id", async (req, res) => {
+  const { id } = req.params;
+  Trip.findById(id).then((trip) => {
+    res.json(trip);
+  });
+});
+
+// this part for fetching liked places array in the trip
+app.get("/trip/places/:id", async (req, res) => {
+  const { id } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    console.log(`${id} is not a valid ObjectId`);
+    return res.status(400).json({ message: `${id} is not a valid ObjectId` });
+  }
+  try {
+    const results = await Trip.aggregate([
+      // Match the trip by ID
+      { $match: { _id: new mongoose.Types.ObjectId(id) } },
+
+      // Lookup to fetch the details of the liked places
+      {
+        $lookup: {
+          from: "places", // This should match the collection name where places are stored
+          localField: "likedPlaces",
+          foreignField: "_id",
+          as: "likedPlacesDetails",
+        },
+      },
+
+      // Optionally you can add a projection to format the output
+      {
+        $project: {
+          _id: 1, // Include trip id
+          name: 1, // Include any other fields you care about from the trip
+          likedPlacesDetails: 1, // This will include the array of populated liked places
+        },
+      },
+    ]);
+
+    if (results.length === 0) {
+      return res.status(404).json({ message: "Trip not found" });
+    }
+
+    // Send back the populated liked places details
+    res.json(results[0].likedPlacesDetails);
+  } catch (error) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.post("/trip/search", async (req, res) => {
+  // return the places that are not in the likedPlaces array and have same location
+  const { location, likedPlaces } = req.body;
+  const results = await Place.find({
+    location,
+    _id: { $nin: likedPlaces },
+  });
+  res.json(results);
+});
+
+app.post("/trip/places/addLiked", async (req, res) => {
+  const { tripID, placeId } = req.body;
+  Trip.findByIdAndUpdate(
+    tripID,
+    { $push: { likedPlaces: placeId } },
+    { new: true }
+  ).then((trip) => {
+    console.log("Place added to liked in trip", trip);
+  });
+});
+// updating the trip information base on trip ID
+app.post("/update/trips/:id", async (req, res) => {
+  const { tripName, description, coverImage, totalDays } = req.body;
+  const { id } = req.params;
+  Trip.findByIdAndUpdate(
+    id,
+    { tripName, description, imageTrip: coverImage, totalDays },
+    { new: true }
+  ).then((trip) => {
+    console.log("Trip updated", trip);
+  });
+  res.send("Trip updated");
+});
+
+/*
+const TripSchema = new mongoose.Schema({
+  userID: { type: Types.ObjectId, required: true },
+  tripName: { type: String, default: "New Trip" }, // Default value for tripName
+  region: { type: [String], default: [] }, // Default value as an empty array
+  totalDays: { type: Number, default: 1 }, // Default value for totalDays
+  description: { type: String, default: "No description provided." }, // Default description
+  imageTrip: { type: String, default: "trips/tripImage.jpg" }, // Default image path
+  likedPlaces: { type: [Types.ObjectId], default: [] }, // Default as empty array
+  days: { type: [[String]], default: [[]] }, // Nested array with a default empty array
+});
+
+*/
 app.listen(4000, () => console.log("App listening on port 4000!"));
