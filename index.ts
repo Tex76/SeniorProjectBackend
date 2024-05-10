@@ -168,13 +168,15 @@ const UserSchema = new mongoose.Schema({
 
 const TripSchema = new mongoose.Schema({
   userID: { type: Types.ObjectId, required: true },
-  tripName: { type: String, default: "New Trip" }, // Default value for tripName
-  region: { type: [String], default: [] }, // Default value as an empty array
-  totalDays: { type: Number, default: 1 }, // Default value for totalDays
-  description: { type: String, default: "No description provided." }, // Default description
-  imageTrip: { type: String, default: "trips/tripImage.jpg" }, // Default image path
-  likedPlaces: { type: [Types.ObjectId], default: [] }, // Default as empty array
-  days: { type: [[String]], default: [[]] }, // Nested array with a default empty array
+  tripName: { type: String, default: "New Trip" },
+  region: { type: [String], default: [] },
+  totalDays: { type: Number, default: 1 },
+  description: { type: String, default: "No description provided." },
+  imageTrip: { type: String, default: "trips/tripImage.jpg" },
+  likedPlaces: { type: [Types.ObjectId], default: [] },
+  days: [
+    [placeSchema], // Embedding the place schema directly within each day's array
+  ],
 });
 
 UserSchema.pre("save", function (next) {
@@ -245,20 +247,26 @@ app.post("/login", async (req, res) => {
     jwt.sign(
       {
         email: user.email,
-        name: user.name,
         id: user._id,
-        points: user.points,
-        rank: user.rank,
+        name: user.name,
+        userName: user.userName,
         avatarImage: user.avatarImage,
+        rank: user.rank,
+        rankImage: user.rankImage,
+        contribution: user.contribution,
+        trips: user.trips,
+        runningTrip: user.runningTrip,
       },
       jwtSecret,
-      { expiresIn: "1day" },
+      {
+        expiresIn: "315360000", // 10 years in seconds
+      },
       (err: Error | null, token: string | undefined) => {
         if (err) {
           console.error("JWT sign error:", err);
           return res.status(500).send("Failed to sign token");
         }
-        res.cookie("token", token, { httpOnly: true });
+        res.cookie("token", token, { httpOnly: true, sameSite: "strict" });
         res.status(200).json(user);
       }
     );
@@ -565,14 +573,45 @@ app.post("/setComment", async (req, res) => {
   res.send("trying to save the comment");
 });
 
-app.get("/user/trips/:id", (req, res) => {
+app.get("/user/trips/:id", async (req, res) => {
   const { id } = req.params;
-  User.findById(id)
-    .populate("trips")
-    .then((user: any) => {
-      if (user) res.json(user.trips);
-    });
+
+  try {
+    const results = await User.aggregate([
+      // Match the user by ID
+      { $match: { _id: new mongoose.Types.ObjectId(id) } },
+
+      // Lookup to fetch the trips
+      {
+        $lookup: {
+          from: "trips", // The collection to join
+          localField: "trips", // Field from the users collection
+          foreignField: "_id", // Field from the trips collection
+          as: "trips", // Resultant array field
+        },
+      },
+
+      // Optionally project fields
+      {
+        $project: {
+          _id: 0, // Exclude user id
+          trips: 1, // Include trips array
+        },
+      },
+    ]);
+
+    if (results.length > 0 && results[0].trips) {
+      res.json(results[0].trips);
+      console.log("TRIP FROM USER DATA", results[0].trips);
+    } else {
+      res.status(404).send({ message: "No trips found or user not found." });
+    }
+  } catch (error) {
+    console.error("Error fetching user trips:", error);
+    res.status(500).send({ message: "Internal server error" });
+  }
 });
+
 app.post("/trips", async (req, res) => {
   const { userID, tripName, region, days, description } = req.body;
   const trip = new Trip({
@@ -581,6 +620,7 @@ app.post("/trips", async (req, res) => {
     region,
     totalDays: days,
     description,
+    days: Array.from({ length: days }, () => []),
   });
   trip.save().then((trip) => {
     User.findByIdAndUpdate(
@@ -590,57 +630,43 @@ app.post("/trips", async (req, res) => {
     ).then((user) => {
       console.log("Trip saved in user", user);
     });
-    res.send({ id: trip._id });
-  });
-});
 
-app.get("/trips/:id", async (req, res) => {
-  const { id } = req.params;
-  Trip.findById(id).then((trip) => {
-    res.json(trip);
+    res.send(trip);
   });
 });
 
 // this part for fetching liked places array in the trip
-app.get("/trip/places/:id", async (req, res) => {
+app.get("/trips/:id", async (req, res) => {
   const { id } = req.params;
+
   if (!mongoose.Types.ObjectId.isValid(id)) {
-    console.log(`${id} is not a valid ObjectId`);
-    return res.status(400).json({ message: `${id} is not a valid ObjectId` });
+    return res.status(400).send({ message: "Invalid trip ID." });
   }
+
   try {
     const results = await Trip.aggregate([
-      // Match the trip by ID
       { $match: { _id: new mongoose.Types.ObjectId(id) } },
-
-      // Lookup to fetch the details of the liked places
       {
         $lookup: {
-          from: "places", // This should match the collection name where places are stored
-          localField: "likedPlaces",
-          foreignField: "_id",
-          as: "likedPlacesDetails",
-        },
-      },
-
-      // Optionally you can add a projection to format the output
-      {
-        $project: {
-          _id: 1, // Include trip id
-          name: 1, // Include any other fields you care about from the trip
-          likedPlacesDetails: 1, // This will include the array of populated liked places
+          from: "places", // This should match the name of the collection containing the place documents
+          localField: "likedPlaces", // The field in Trip documents that contains the IDs
+          foreignField: "_id", // The corresponding field in Place documents
+          as: "likedPlacesDetails", // The name of the new field to be added with the joined data
         },
       },
     ]);
 
-    if (results.length === 0) {
-      return res.status(404).json({ message: "Trip not found" });
+    if (!results || results.length === 0) {
+      return res.status(404).send({ message: "Trip not found." });
     }
 
-    // Send back the populated liked places details
-    res.json(results[0].likedPlacesDetails);
+    const tripWithPlaces = results[0]; // Since we are querying by ID, we only expect one result
+
+    res.json(tripWithPlaces); // Send back the aggregated trip data
+    console.log("Trip found", tripWithPlaces);
   } catch (error) {
-    res.status(500).json({ message: "Server error" });
+    console.error("Error fetching trip with places using $lookup:", error);
+    res.status(500).send({ message: "Internal server error" });
   }
 });
 
@@ -655,27 +681,79 @@ app.post("/trip/search", async (req, res) => {
 });
 
 app.post("/trip/places/addLiked", async (req, res) => {
-  const { tripID, placeId } = req.body;
-  Trip.findByIdAndUpdate(
-    tripID,
-    { $push: { likedPlaces: placeId } },
-    { new: true }
-  ).then((trip) => {
+  const { tripId, placeId } = req.body;
+  console.log("Trip ID", tripId);
+  console.log("Place ID", placeId);
+
+  try {
+    const trip = await Trip.findByIdAndUpdate(
+      tripId,
+      { $addToSet: { likedPlaces: placeId } }, // Using $addToSet to prevent duplicates
+      { new: true, runValidators: true }
+    );
+
+    if (!trip) {
+      return res.status(404).send({ message: "Trip not found." });
+    }
+
+    if (trip.likedPlaces.includes(placeId)) {
+      return res
+        .status(409)
+        .send({ message: "Place already exists in this trip." }); // 409 Conflict
+    }
+
     console.log("Place added to liked in trip", trip);
-  });
+    res.json({
+      message: "Place added successfully to liked places.",
+      trip: trip,
+    });
+  } catch (error) {
+    console.error("Failed to add place to liked places in trip:", error);
+    res.status(500).send({ message: "Internal server error", error: error });
+  }
 });
+
 // updating the trip information base on trip ID
 app.post("/update/trips/:id", async (req, res) => {
   const { tripName, description, coverImage, totalDays } = req.body;
   const { id } = req.params;
-  Trip.findByIdAndUpdate(
-    id,
-    { tripName, description, imageTrip: coverImage, totalDays },
-    { new: true }
-  ).then((trip) => {
-    console.log("Trip updated", trip);
-  });
-  res.send("Trip updated");
+
+  try {
+    // Build the update object dynamically
+    const update = {
+      ...(tripName && { tripName }),
+      ...(description && { description }),
+      ...(coverImage && { imageTrip: coverImage }),
+      ...(totalDays !== undefined && { totalDays }),
+    };
+
+    // Update the trip and adjust the `days` array as necessary
+    const trip = await Trip.findById(id);
+    if (!trip) {
+      return res.status(404).send("Trip not found.");
+    }
+
+    // Dynamically update trip fields
+    Object.assign(trip, update);
+
+    // Adjust the `days` array
+    if (totalDays !== undefined) {
+      if (totalDays < trip.days.length) {
+        trip.days.splice(totalDays); // Cut down extra days
+      } else {
+        while (trip.days.length < totalDays) {
+          trip.days.push([]); // Add new days as empty arrays
+        }
+      }
+    }
+
+    await trip.save(); // Save the updated trip
+    console.log("Trip updated --------------------------", trip);
+    res.send(trip); // Send back the updated trip object
+  } catch (error) {
+    console.error("Failed to update trip:", error);
+    res.status(500).send("Internal server error");
+  }
 });
 
 /*
