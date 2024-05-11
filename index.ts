@@ -178,9 +178,7 @@ const TripSchema = new mongoose.Schema({
       "https://media-cdn.tripadvisor.com/media/attractions-splice-spp-720x480/10/4e/8e/2e.jpg",
   },
   likedPlaces: { type: [Types.ObjectId], default: [] },
-  days: [
-    [placeSchema], // Embedding the place schema directly within each day's array
-  ],
+  days: [[placeSchema]],
 });
 
 UserSchema.pre("save", function (next) {
@@ -615,26 +613,42 @@ app.get("/user/trips/:id", async (req, res) => {
 });
 
 app.post("/trips", async (req, res) => {
-  const { userID, tripName, region, days, description } = req.body;
-  const trip = new Trip({
-    userID,
-    tripName,
-    region,
-    totalDays: days,
-    description,
-    days: Array.from({ length: days }, () => []),
-  });
-  trip.save().then((trip) => {
-    User.findByIdAndUpdate(
-      userID,
-      { $push: { trips: trip._id } },
-      { new: true }
-    ).then((user) => {
-      console.log("Trip saved in user", user);
+  const { userid, tripName, region, days, description } = req.body;
+  console.log("Request body of createTripForm", req.body);
+  // Validate incoming data (basic example)
+  if (!userid || !tripName || !region || !days || !description) {
+    return res.status(400).send({ message: "All fields are required" });
+  }
+
+  try {
+    // Create a new trip instance
+    const trip = new Trip({
+      userID: userid,
+      tripName,
+      region,
+      totalDays: days,
+      description,
+      days: Array.from({ length: days }, () => []),
     });
 
-    res.send(trip);
-  });
+    // Save the trip to the database
+    const savedTrip = await trip.save();
+
+    // Update the user's trips list
+    const updatedUser = await User.findByIdAndUpdate(
+      userid,
+      { $push: { trips: savedTrip._id } },
+      { new: true }
+    );
+
+    console.log("Trip saved in user", updatedUser);
+
+    // Send the saved trip as a response
+    res.send({ trip: savedTrip });
+  } catch (error) {
+    console.error("Error creating trip", error);
+    res.status(500).send({ message: "Failed to create trip" });
+  }
 });
 
 // this part for fetching liked places array in the trip
@@ -665,7 +679,6 @@ app.get("/trips/:id", async (req, res) => {
     const tripWithPlaces = results[0]; // Since we are querying by ID, we only expect one result
 
     res.json(tripWithPlaces); // Send back the aggregated trip data
-    console.log("Trip found", tripWithPlaces);
   } catch (error) {
     console.error("Error fetching trip with places using $lookup:", error);
     res.status(500).send({ message: "Internal server error" });
@@ -674,10 +687,6 @@ app.get("/trips/:id", async (req, res) => {
 
 app.post("/trip/search", async (req, res) => {
   const { location, likedPlaces } = req.body;
-
-  // Log the input values for debugging purposes
-  console.log("Location", location);
-  console.log("Liked Places", likedPlaces);
 
   try {
     // Query places that are not already liked and match the given location
@@ -688,7 +697,6 @@ app.post("/trip/search", async (req, res) => {
 
     // Send back the results
     res.json(results);
-    console.log("Search results:", results);
   } catch (error) {
     console.error("Error searching places:", error);
     res.status(500).send({ message: "Internal server error" });
@@ -772,6 +780,95 @@ app.post("/update/trips/:id", async (req, res) => {
     res.send(trip); // Send back the updated trip object
   } catch (error) {
     console.error("Failed to update trip:", error);
+    res.status(500).send("Internal server error");
+  }
+});
+
+app.post("/trip/addPlaceToDay", async (req, res) => {
+  const { tripId, placeId, dayIndex } = req.body;
+
+  // Validate input for dayIndex to ensure it's a non-negative integer
+  if (dayIndex < 0) {
+    return res
+      .status(400)
+      .send("Invalid day index: Index must be zero or positive.");
+  }
+
+  try {
+    // Fetch the place document to ensure it's valid
+    const place = await Place.findById(placeId);
+    if (!place) {
+      return res.status(404).send("Place not found.");
+    }
+
+    // Prepare the query and update object using proper types
+    const query: { [key: string]: any } = { _id: tripId };
+    query[`days.${dayIndex}`] = { $exists: true };
+
+    const update = {
+      $push: { [`days.${dayIndex}`]: place },
+    };
+
+    // Update the trip with the new place document at the specified dayIndex
+    const result = await Trip.findOneAndUpdate(query, update, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (!result) {
+      return res.status(404).send("Trip not found or day index out of range.");
+    }
+
+    res.send({
+      message: "Place added successfully to the day.",
+      trip: result,
+    });
+  } catch (error) {
+    console.error("Failed to add place to day:", error);
+    res.status(500).send("Internal server error");
+  }
+});
+
+app.post("/trip/places/delete", async (req, res) => {
+  const { tripId, placeId, dayIndex } = req.body;
+
+  if (dayIndex < 0) {
+    return res
+      .status(400)
+      .send("Invalid day index: Index must be zero or positive.");
+  }
+
+  try {
+    const trip = await Trip.findById(tripId);
+    if (!trip) {
+      return res.status(404).send("Trip not found.");
+    }
+
+    // Check if the dayIndex is within the range of the days array
+    if (dayIndex >= trip.days.length) {
+      return res.status(400).send("Day index out of range.");
+    }
+
+    const update = {
+      $pull: { [`days.${dayIndex}`]: { _id: placeId } },
+    };
+
+    const result = await Trip.findOneAndUpdate(
+      { _id: tripId, [`days.${dayIndex}`]: { $exists: true } },
+      update,
+      { new: true, runValidators: true }
+    );
+
+    if (!result) {
+      return res.status(404).send("Place not found or day index out of range.");
+    }
+
+    res.send({
+      message: "Place deleted successfully from the day.",
+      trip: result,
+    });
+  } catch (error) {
+    console.error("Failed to delete place from day:", error);
     res.status(500).send("Internal server error");
   }
 });
