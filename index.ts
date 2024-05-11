@@ -172,7 +172,11 @@ const TripSchema = new mongoose.Schema({
   region: { type: [String], default: [] },
   totalDays: { type: Number, default: 1 },
   description: { type: String, default: "No description provided." },
-  imageTrip: { type: String, default: "trips/tripImage.jpg" },
+  imageTrip: {
+    type: String,
+    default:
+      "https://media-cdn.tripadvisor.com/media/attractions-splice-spp-720x480/10/4e/8e/2e.jpg",
+  },
   likedPlaces: { type: [Types.ObjectId], default: [] },
   days: [
     [placeSchema], // Embedding the place schema directly within each day's array
@@ -380,7 +384,6 @@ app.get("/places/:id", async (req, res) => {
     if (results.length === 0) {
       return res.status(404).json({ message: "Place not found" });
     } else {
-      console.log("Place found", results[0]);
       return res.json(results[0]); // Since we are doing a findOne equivalent
     }
   } catch (err) {
@@ -602,7 +605,6 @@ app.get("/user/trips/:id", async (req, res) => {
 
     if (results.length > 0 && results[0].trips) {
       res.json(results[0].trips);
-      console.log("TRIP FROM USER DATA", results[0].trips);
     } else {
       res.status(404).send({ message: "No trips found or user not found." });
     }
@@ -651,7 +653,7 @@ app.get("/trips/:id", async (req, res) => {
           from: "places", // This should match the name of the collection containing the place documents
           localField: "likedPlaces", // The field in Trip documents that contains the IDs
           foreignField: "_id", // The corresponding field in Place documents
-          as: "likedPlacesDetails", // The name of the new field to be added with the joined data
+          as: "likedPlaces", // The name of the new field to be added with the joined data
         },
       },
     ]);
@@ -671,21 +673,40 @@ app.get("/trips/:id", async (req, res) => {
 });
 
 app.post("/trip/search", async (req, res) => {
-  // return the places that are not in the likedPlaces array and have same location
   const { location, likedPlaces } = req.body;
-  const results = await Place.find({
-    location,
-    _id: { $nin: likedPlaces },
-  });
-  res.json(results);
+
+  // Log the input values for debugging purposes
+  console.log("Location", location);
+  console.log("Liked Places", likedPlaces);
+
+  try {
+    // Query places that are not already liked and match the given location
+    const results = await Place.find({
+      region: { $in: location }, // Assuming 'location' is an array of locations the user is interested in
+      _id: { $nin: likedPlaces }, // Ensure the places are not in the likedPlaces array
+    });
+
+    // Send back the results
+    res.json(results);
+    console.log("Search results:", results);
+  } catch (error) {
+    console.error("Error searching places:", error);
+    res.status(500).send({ message: "Internal server error" });
+  }
 });
 
 app.post("/trip/places/addLiked", async (req, res) => {
-  const { tripId, placeId } = req.body;
-  console.log("Trip ID", tripId);
-  console.log("Place ID", placeId);
+  const { tripId, placeId, placeregion, tripregion } = req.body;
 
   try {
+    // Check if place region is in trip regions
+    if (!tripregion.includes(placeregion)) {
+      return res.status(400).send({
+        message:
+          "You can't add this place because there is a conflict in the regions.",
+      });
+    }
+
     const trip = await Trip.findByIdAndUpdate(
       tripId,
       { $addToSet: { likedPlaces: placeId } }, // Using $addToSet to prevent duplicates
@@ -702,7 +723,6 @@ app.post("/trip/places/addLiked", async (req, res) => {
         .send({ message: "Place already exists in this trip." }); // 409 Conflict
     }
 
-    console.log("Place added to liked in trip", trip);
     res.json({
       message: "Place added successfully to liked places.",
       trip: trip,
@@ -748,7 +768,7 @@ app.post("/update/trips/:id", async (req, res) => {
     }
 
     await trip.save(); // Save the updated trip
-    console.log("Trip updated --------------------------", trip);
+
     res.send(trip); // Send back the updated trip object
   } catch (error) {
     console.error("Failed to update trip:", error);
