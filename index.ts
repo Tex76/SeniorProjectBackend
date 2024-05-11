@@ -873,17 +873,4 @@ app.post("/trip/places/delete", async (req, res) => {
   }
 });
 
-/*
-const TripSchema = new mongoose.Schema({
-  userID: { type: Types.ObjectId, required: true },
-  tripName: { type: String, default: "New Trip" }, // Default value for tripName
-  region: { type: [String], default: [] }, // Default value as an empty array
-  totalDays: { type: Number, default: 1 }, // Default value for totalDays
-  description: { type: String, default: "No description provided." }, // Default description
-  imageTrip: { type: String, default: "trips/tripImage.jpg" }, // Default image path
-  likedPlaces: { type: [Types.ObjectId], default: [] }, // Default as empty array
-  days: { type: [[String]], default: [[]] }, // Nested array with a default empty array
-});
-
-*/
 app.listen(4000, () => console.log("App listening on port 4000!"));
