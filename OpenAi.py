@@ -1,6 +1,7 @@
 import os
 from langchain_openai import ChatOpenAI
 from langchain.prompts import PromptTemplate
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from pymongo import MongoClient
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -25,6 +26,7 @@ openai_client = ChatOpenAI(api_key=API_KEY)
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB
+
 # Function to convert MongoDB documents to JSON-serializable format
 
 
@@ -153,15 +155,24 @@ def generate_itinerary():
         )
 
         # Print the raw response for debugging
-
         raw_response = response.content
-        parsed_response = parse_json_response(raw_response)
+
+        # Split the raw response into chunks
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=200
+        )
+
+        chunks = text_splitter.split_text(raw_response)
+
+        # Combine the chunks back to form a JSON response
+        parsed_chunks = [parse_json_response(chunk) for chunk in chunks]
 
     except Exception as e:
         print(f"Error calling OpenAI API: {e}")
-        parsed_response = {"error": str(e)}
+        parsed_chunks = {"error": str(e)}
 
-    return jsonify(parsed_response), 200
+    return jsonify(parsed_chunks), 200
 
 
 if __name__ == "__main__":
