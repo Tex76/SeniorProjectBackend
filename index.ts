@@ -6,7 +6,6 @@ import cors from "cors";
 import bodyParser from "body-parser";
 import cookieParser from "cookie-parser";
 import jwt from "jsonwebtoken";
-import { ObjectId } from "mongodb";
 dotenv.config();
 const app = express();
 const corsOptions = {
@@ -21,6 +20,8 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(cors(corsOptions));
+app.use(bodyParser.json({ limit: "50mb" }));
+app.use(bodyParser.urlencoded({ limit: "50mb", extended: true }));
 
 const bcryptSalt = bcrypt.genSaltSync(10);
 const jwtSecret = "secret-key";
