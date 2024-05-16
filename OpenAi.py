@@ -1,11 +1,10 @@
 import os
 from langchain_openai import ChatOpenAI
-from langchain.prompts import PromptTemplate
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 from pymongo import MongoClient
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
+from langchain_core.output_parsers import JsonOutputParser
 import json
 
 # Load environment variables from .env file
@@ -38,7 +37,7 @@ def convert_document(doc):
     return doc
 
 
-@app.route('/api/generate_itinerary', methods=['POST'])
+@ app.route('/api/generate_itinerary', methods=['POST'])
 def generate_itinerary():
     try:
         # Extract context values from the request body
@@ -132,47 +131,31 @@ def generate_itinerary():
             places=json.dumps(places_data)
         )
 
-        print("The following is the prompt text that will enter to the AI:", prompt_text)
-
         # Custom JSON parser function
-        def parse_json_response(response):
-            try:
-                return json.loads(response)
-            except json.JSONDecodeError:
-                return {"error": "Failed to parse JSON response from the model."}
-
+        parser = JsonOutputParser()
         # Generate the itinerary using OpenAI
         response = openai_client.invoke(
             prompt_text,
             model="gpt-3.5-turbo",  # Reduce the max_tokens to manage the length
-            temperature=0.5,
+            temperature=0.7,
             top_p=0.9,
             n=1,
             stream=False,
             stop=None,
             presence_penalty=0,
-            frequency_penalty=0
+            frequency_penalty=0,
+            max_tokens=4096,
         )
 
         # Print the raw response for debugging
-        raw_response = response.content
+        prased_response = parser.parse(response.content)
 
-        # Split the raw response into chunks
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200
-        )
-
-        chunks = text_splitter.split_text(raw_response)
-
-        # Combine the chunks back to form a JSON response
-        parsed_chunks = [parse_json_response(chunk) for chunk in chunks]
+        print("The following is the raw response from the AI:", response.content)
 
     except Exception as e:
         print(f"Error calling OpenAI API: {e}")
-        parsed_chunks = {"error": str(e)}
 
-    return jsonify(parsed_chunks), 200
+    return jsonify(prased_response), 200
 
 
 if __name__ == "__main__":

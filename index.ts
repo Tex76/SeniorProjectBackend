@@ -6,6 +6,7 @@ import cors from "cors";
 import bodyParser from "body-parser";
 import cookieParser from "cookie-parser";
 import jwt from "jsonwebtoken";
+import { ObjectId } from "mongodb";
 dotenv.config();
 const app = express();
 const corsOptions = {
@@ -872,6 +873,43 @@ app.post("/trip/places/delete", async (req, res) => {
     console.error("Failed to delete place from day:", error);
     res.status(500).send("Internal server error");
   }
+});
+
+app.post("/api/add_trip", (req, res) => {
+  const { name, selectedRegion, Days, description, numberOfDays, userId } =
+    req.body;
+
+  const likedPlaces: ObjectId[] = [];
+  Days.map((day: any) => {
+    day.map((place: any) => {
+      likedPlaces.push(new ObjectId(place._id));
+    });
+  });
+
+  const trip = new Trip({
+    TripName: name,
+    region: selectedRegion,
+    days: Days,
+    description: description,
+    totalDays: numberOfDays,
+    userID: userId,
+    likedPlaces: likedPlaces,
+  });
+
+  trip.save().then((trip) => {
+    // add trip to user
+    const id = trip._id;
+    User.findByIdAndUpdate(
+      userId,
+      { $push: { trips: id } },
+      { new: true }
+    ).then((user) => {
+      console.log("Trip saved", trip);
+      res.send("Trip saved");
+    });
+    console.log("Trip saved", trip);
+    res.send("Trip saved");
+  });
 });
 
 app.listen(4000, () => console.log("App listening on port 4000!"));
