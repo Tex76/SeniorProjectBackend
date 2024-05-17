@@ -6,7 +6,7 @@ import cors from "cors";
 import bodyParser from "body-parser";
 import cookieParser from "cookie-parser";
 import jwt from "jsonwebtoken";
-import { ObjectId } from "mongodb";
+const { ObjectId } = mongoose.Types;
 dotenv.config();
 const app = express();
 const corsOptions = {
@@ -261,6 +261,7 @@ app.post("/login", async (req, res) => {
         contribution: user.contribution,
         trips: user.trips,
         runningTrip: user.runningTrip,
+        points: user.points,
       },
       jwtSecret,
       {
@@ -580,10 +581,15 @@ app.post("/setComment", async (req, res) => {
 app.get("/user/trips/:id", async (req, res) => {
   const { id } = req.params;
 
+  // Check if the id is a valid ObjectId
+  if (!ObjectId.isValid(id)) {
+    return res.status(400).send({ message: "Invalid user ID." });
+  }
+
   try {
     const results = await User.aggregate([
       // Match the user by ID
-      { $match: { _id: new mongoose.Types.ObjectId(id) } },
+      { $match: { _id: new ObjectId(id) } },
 
       // Lookup to fetch the trips
       {
@@ -604,7 +610,7 @@ app.get("/user/trips/:id", async (req, res) => {
       },
     ]);
 
-    if (results.length > 0 && results[0].trips) {
+    if (results.length > 0 && results[0].trips.length > 0) {
       res.json(results[0].trips);
     } else {
       res.status(404).send({ message: "No trips found or user not found." });
