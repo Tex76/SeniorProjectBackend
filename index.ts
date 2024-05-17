@@ -281,7 +281,7 @@ app.post("/login", async (req, res) => {
 app.get("/places", async (req, res) => {
   try {
     // Fetch the top 10 places sorted by rating in descending order
-    const places = await Place.find().sort({ rate: -1 }).limit(25);
+    const places = await Place.find().sort({ rate: -1 }).limit(20);
     console.log("places", places);
     res.json(places);
   } catch (error) {
