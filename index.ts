@@ -17,6 +17,7 @@ const corsOptions = {
 };
 
 app.use(cookieParser());
+app.use(express.json());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.json());
@@ -875,41 +876,63 @@ app.post("/trip/places/delete", async (req, res) => {
   }
 });
 
-app.post("/api/add_trip", (req, res) => {
+app.post("/api/add_trip", async (req, res) => {
   const { name, selectedRegion, Days, description, numberOfDays, userId } =
     req.body;
 
-  const likedPlaces: ObjectId[] = [];
-  Days.map((day: any) => {
-    day.map((place: any) => {
-      likedPlaces.push(new ObjectId(place._id));
+  try {
+    let likedPlaces: any[] = [];
+
+    // Map through days and places to convert place IDs to ObjectId
+    const days: any[][] = [[]];
+    for (let i = 0; i < Days.length; i++) {
+      days[i] = [];
+      const { places } = Days[i];
+      for (let j = 0; j < places.length; j++) {
+        days[i].push(places[j]);
+        likedPlaces.push(places[j]);
+      }
+    }
+
+    // Use Set directly with ObjectId if supported by your database
+    // likedPlaces = Array.from(new Set(likedPlaces));
+
+    // Simplified cleaning of userId assuming it's a direct ObjectId string
+    const userObjectId = userId;
+
+    console.log("user ID", userObjectId);
+
+    const trip = new Trip({
+      tripName: name,
+      region: selectedRegion,
+      days: days,
+      description: description,
+      totalDays: numberOfDays,
+      userID: userObjectId,
+      likedPlaces: likedPlaces,
+      imageTrip:
+        "https://media-cdn.tripadvisor.com/media/attractions-splice-spp-720x480/10/4e/8e/2e.jpg",
     });
-  });
 
-  const trip = new Trip({
-    TripName: name,
-    region: selectedRegion,
-    days: Days,
-    description: description,
-    totalDays: numberOfDays,
-    userID: userId,
-    likedPlaces: likedPlaces,
-  });
-
-  trip.save().then((trip) => {
-    // add trip to user
-    const id = trip._id;
+    const savedTrip = await trip.save();
+    console.log("Trip saved successfully", savedTrip._id);
     User.findByIdAndUpdate(
-      userId,
-      { $push: { trips: id } },
+      userObjectId,
+      { $push: { trips: savedTrip._id } },
       { new: true }
-    ).then((user) => {
-      console.log("Trip saved", trip);
-      res.send("Trip saved");
-    });
-    console.log("Trip saved", trip);
-    res.send("Trip saved");
-  });
+    )
+      .then((user) => {
+        res.json({ tripID: savedTrip._id });
+        console.log("Trip saved in user", user);
+      })
+      .catch((err) => {
+        console.error("Error updating user with trip:", err);
+        res.status(500).send("Failed to update user with trip");
+      });
+  } catch (err) {
+    console.error("Error processing request", err);
+    res.status(500).send("Failed to save trip due to server error");
+  }
 });
 
 app.listen(4000, () => console.log("App listening on port 4000!"));
