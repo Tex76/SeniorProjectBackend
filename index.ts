@@ -15,6 +15,7 @@ const corsOptions = {
   optionSuccessStatus: 200,
   methods: ["POST", "PUT", "GET", "OPTIONS", "HEAD"],
 };
+import { Request, Response } from "express";
 
 app.use(cookieParser());
 app.use(express.json());
@@ -134,9 +135,10 @@ const CommentSchema = new Schema({
 // images/photo.png
 
 const PhotoSchema = new mongoose.Schema({
-  placeID: { type: Types.ObjectId, required: true },
-  userID: { type: Types.ObjectId, required: true },
+  userID: { type: Types.ObjectId, required: true, ref: "User" },
+  placeID: { type: Types.ObjectId, required: true, ref: "Place" },
   userName: String,
+
   dateOfTaken: { type: Date, default: Date.now },
   image: { type: String, default: "default-image.jpg" },
   score: { type: Number, default: 0 },
@@ -294,116 +296,171 @@ app.get("/places", async (req, res) => {
   }
 });
 
-app.get("/places/:id", async (req, res) => {
+app.get("/places/:id", async (req: Request, res: Response) => {
   const { id } = req.params;
 
   if (!mongoose.Types.ObjectId.isValid(id)) {
     console.log(`${id} is not a valid ObjectId`);
     return res.status(400).json({ message: `${id} is not a valid ObjectId` });
   }
+
   try {
-    const results = await Place.aggregate([
-      { $match: { _id: new mongoose.Types.ObjectId(id) } },
-      {
-        $lookup: {
-          from: "comments",
-          localField: "comments",
-          foreignField: "_id",
-          as: "comments",
-        },
-      },
-      {
-        $unwind: { path: "$comments", preserveNullAndEmptyArrays: true },
-      },
+    // Step 1: Fetch the place document
+    const place: any | null = await Place.findById(id).lean();
+
+    if (!place) {
+      return res.status(404).json({ message: "Place not found" });
+    }
+
+    // Step 2: Populate comments with user details
+    const comments = await Comment.aggregate([
+      { $match: { _id: { $in: place.comments } } },
       {
         $lookup: {
           from: "users",
-          localField: "comments.userID",
+          localField: "userID",
           foreignField: "_id",
-          as: "comments.userDetails",
+          as: "userDetails",
         },
       },
       {
         $unwind: {
-          path: "$comments.userDetails",
+          path: "$userDetails",
           preserveNullAndEmptyArrays: true,
         },
       },
       {
         $addFields: {
-          "comments.username": "$comments.userDetails.username",
-          "comments.rank": "$comments.userDetails.rank",
-          "comments.rankImage": "$comments.userDetails.rankImage",
-          "comments.avatarImage": "$comments.userDetails.avatarImage",
-          "comments.contribution": "$comments.userDetails.contribution",
-          "comments.userID": "$comments.userDetails._id",
+          username: "$userDetails.name",
+          rank: "$userDetails.rank",
+          rankImage: "$userDetails.rankImage",
+          avatarImage: "$userDetails.avatarImage",
+          contribution: "$userDetails.contribution",
+          userID: "$userDetails._id",
         },
       },
       {
         $project: {
-          "comments.userDetails": 0,
-        },
-      },
-      {
-        $group: {
-          _id: "$_id",
-          root: { $mergeObjects: "$$ROOT" },
-          comments: { $push: "$comments" },
-        },
-      },
-      {
-        $addFields: {
-          "root.rate": { $avg: "$comments.rate" },
-          "root.totalComments": { $size: "$comments" },
-          "root.subRatings": {
-            $switch: {
-              branches: [
-                {
-                  case: { $eq: ["$root.category", "thingsToDo"] },
-                  then: {
-                    locationRate: { $avg: "$comments.location" },
-                    safety: { $avg: "$comments.safety" },
-                    facilities: { $avg: "$comments.facilities" },
-                    convenience: { $avg: "$comments.convenience" },
-                    staff: { $avg: "$comments.staff" },
-                  },
-                },
-                {
-                  case: { $eq: ["$root.category", "thingsToEat"] },
-                  then: {
-                    foodQuality: { $avg: "$comments.foodQuality" },
-                    valueForMoney: { $avg: "$comments.valueForMoney" },
-                    service: { $avg: "$comments.service" },
-                    menuVariety: { $avg: "$comments.menuVariety" },
-                    ambiance: { $avg: "$comments.ambiance" },
-                  },
-                },
-              ],
-              default: {
-                locationRate: { $avg: "$comments.location" },
-                service: { $avg: "$comments.service" },
-                facilities: { $avg: "$comments.facilities" },
-                roomQuality: { $avg: "$comments.roomQuality" },
-                cleanliness: { $avg: "$comments.cleanliness" },
-              },
-            },
-          },
-        },
-      },
-      {
-        $replaceRoot: {
-          newRoot: {
-            $mergeObjects: ["$root", "$$ROOT"],
-          },
+          userDetails: 0,
         },
       },
     ]);
 
-    if (results.length === 0) {
-      return res.status(404).json({ message: "Place not found" });
-    } else {
-      return res.json(results[0]); // Since we are doing a findOne equivalent
+    // Step 3: Populate photos with user details
+    const photos = await Photo.aggregate([
+      { $match: { _id: { $in: place.photos } } },
+      {
+        $lookup: {
+          from: "users",
+          localField: "userID",
+          foreignField: "_id",
+          as: "userDetails",
+        },
+      },
+      {
+        $unwind: {
+          path: "$userDetails",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $addFields: {
+          username: "$userDetails.name",
+          rank: "$userDetails.rank",
+          rankImage: "$userDetails.rankImage",
+          avatarImage: "$userDetails.avatarImage",
+          contribution: "$userDetails.contribution",
+          userID: "$userDetails._id",
+        },
+      },
+      {
+        $project: {
+          userDetails: 0,
+        },
+      },
+    ]);
+
+    // Step 4: Calculate average ratings and other fields
+    const rate =
+      comments.length > 0
+        ? comments.reduce((acc, comment) => acc + comment.rate, 0) /
+          comments.length
+        : 0;
+
+    const subRatings: Record<string, number> = {
+      locationRate:
+        comments.length > 0
+          ? comments.reduce((acc, comment) => acc + comment.location, 0) /
+            comments.length
+          : 0,
+      service:
+        comments.length > 0
+          ? comments.reduce((acc, comment) => acc + comment.service, 0) /
+            comments.length
+          : 0,
+      facilities:
+        comments.length > 0
+          ? comments.reduce((acc, comment) => acc + comment.facilities, 0) /
+            comments.length
+          : 0,
+      roomQuality:
+        comments.length > 0
+          ? comments.reduce((acc, comment) => acc + comment.roomQuality, 0) /
+            comments.length
+          : 0,
+      cleanliness:
+        comments.length > 0
+          ? comments.reduce((acc, comment) => acc + comment.cleanliness, 0) /
+            comments.length
+          : 0,
+    };
+
+    if (place.category === "thingsToDo") {
+      subRatings.convenience =
+        comments.length > 0
+          ? comments.reduce((acc, comment) => acc + comment.convenience, 0) /
+            comments.length
+          : 0;
+      subRatings.staff =
+        comments.length > 0
+          ? comments.reduce((acc, comment) => acc + comment.staff, 0) /
+            comments.length
+          : 0;
+    } else if (place.category === "thingsToEat") {
+      subRatings.foodQuality =
+        comments.length > 0
+          ? comments.reduce((acc, comment) => acc + comment.foodQuality, 0) /
+            comments.length
+          : 0;
+      subRatings.valueForMoney =
+        comments.length > 0
+          ? comments.reduce((acc, comment) => acc + comment.valueForMoney, 0) /
+            comments.length
+          : 0;
+      subRatings.menuVariety =
+        comments.length > 0
+          ? comments.reduce((acc, comment) => acc + comment.menuVariety, 0) /
+            comments.length
+          : 0;
+      subRatings.ambiance =
+        comments.length > 0
+          ? comments.reduce((acc, comment) => acc + comment.ambiance, 0) /
+            comments.length
+          : 0;
     }
+
+    // Step 5: Combine all data into the final response
+    const response = {
+      ...place,
+      comments: comments.length > 0 ? comments : [],
+      photos: photos.length > 0 ? photos : [],
+      rate,
+      totalComments: comments.length,
+      subRatings,
+    };
+
+    console.log("Place found", response);
+    return res.json(response);
   } catch (err) {
     console.error(err);
     return res.status(500).json({ message: "Internal server error" });
@@ -412,16 +469,44 @@ app.get("/places/:id", async (req, res) => {
 
 app.get("/profile", async (req, res) => {
   const { token } = req.cookies;
-  if (token) {
-    jwt.verify(token, jwtSecret, {}, (err, user) => {
-      if (err) {
-        console.error("JWT verify error:", err);
-        return res.status(401).send("Unauthorized");
-      } else {
-        return res.json(user);
-      }
-    });
+
+  if (!token) {
+    return res.status(401).send("Unauthorized");
   }
+
+  jwt.verify(token, jwtSecret, {}, async (err, decoded) => {
+    if (err) {
+      console.error("JWT verify error:", err);
+      return res.status(401).send("Unauthorized");
+    }
+
+    if (typeof decoded === "object" && "id" in decoded) {
+      try {
+        const user = await User.findById(decoded.id).select("-password"); // Fetch the latest user data, excluding the password
+        if (!user) {
+          return res.status(404).send("User not found");
+        }
+        return res.json({
+          email: user.email,
+          id: user._id,
+          name: user.name,
+          userName: user.userName,
+          avatarImage: user.avatarImage,
+          rank: user.rank,
+          rankImage: user.rankImage,
+          contribution: user.contribution,
+          trips: user.trips,
+          runningTrip: user.runningTrip,
+          points: user.points,
+        });
+      } catch (error) {
+        console.error("Error fetching user profile:", error);
+        return res.status(500).send("Server error");
+      }
+    } else {
+      return res.status(401).send("Unauthorized");
+    }
+  });
 });
 
 app.post("/logout", (req, res) => {
@@ -486,8 +571,15 @@ app.post("/setComment", async (req, res) => {
 
       User.findById(userID).then((user: any) => {
         user.reviewComments.push(commentID);
+        user.points += 10;
         user.save().then((updatedUser: any) => {
-          console.log("Comment saved in user", updatedUser);
+          res.json({
+            message: "Comment saved successfully",
+            user: {
+              ...updatedUser._doc,
+              points: updatedUser.points,
+            },
+          });
         });
       });
     });
@@ -519,10 +611,10 @@ app.post("/setComment", async (req, res) => {
       valueForMoney,
       menuVariety,
       ambiance,
-
       writtenDate,
       withWhom,
     });
+
     comment.save().then((comment) => {
       const commentID = comment._id;
       Place.findByIdAndUpdate(
@@ -535,8 +627,15 @@ app.post("/setComment", async (req, res) => {
 
       User.findById(userID).then((user: any) => {
         user.reviewComments.push(commentID);
+        user.points += 10;
         user.save().then((updatedUser: any) => {
-          console.log("Comment saved in user", updatedUser);
+          res.json({
+            message: "Comment saved successfully",
+            user: {
+              ...updatedUser._doc,
+              points: updatedUser.points,
+            },
+          });
         });
       });
     });
@@ -584,16 +683,72 @@ app.post("/setComment", async (req, res) => {
 
       User.findById(userID).then((user: any) => {
         user.reviewComments.push(commentID);
+        user.points += 10;
         user.save().then((updatedUser: any) => {
-          console.log("Comment saved in user", updatedUser);
+          res.json({
+            message: "Comment saved successfully",
+            user: {
+              ...updatedUser._doc,
+              points: updatedUser.points,
+            },
+          });
         });
       });
     });
   }
-
-  res.send("trying to save the comment");
 });
 
+app.post("/setPhoto", async (req, res) => {
+  const { imageUrl, placeId, userId, date } = req.body;
+
+  try {
+    // Create and save a new photo
+    const photo = new Photo({
+      placeID: placeId,
+      userID: userId,
+      dateOfTaken: date,
+      image: imageUrl,
+    });
+    await photo.save();
+
+    const photoID = photo._id;
+
+    // Update the place with the new photo
+    const place = await Place.findByIdAndUpdate(
+      placeId,
+      { $push: { photos: photoID } },
+      { new: true }
+    );
+    if (!place) {
+      return res.status(404).send("Place not found");
+    }
+
+    console.log("Photo saved in place", place);
+
+    // Update the user with the new photo and points
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).send("User not found");
+    }
+    user.photosReview.push(photoID);
+    user.points += 30;
+    const updatedUser = await user.save();
+
+    // Respond with a success message and the updated user data
+    res.json({
+      message: "Photo saved successfully",
+      user: {
+        ...updatedUser.toObject(),
+        points: updatedUser.points,
+      },
+    });
+  } catch (error) {
+    console.error("Error saving photo:", error);
+    res.status(500).send("Server error");
+  }
+});
+
+// RESTFUL API
 app.get("/user/trips/:id", async (req, res) => {
   const { id } = req.params;
 
@@ -966,7 +1121,10 @@ app.get("/UserSystem/:id", async (req, res) => {
         path: "reviewComments",
         populate: { path: "placeID", model: "Place" }, // Populate the place details in each comment
       })
-      .populate("photos"); // Populate the photos related to the user
+      .populate({
+        path: "photosReview",
+        populate: { path: "placeID", model: "Place" }, // Populate the place details in each photo
+      });
 
     if (!user) {
       return res.status(404).send({ message: "User not found" });
