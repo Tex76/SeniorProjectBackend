@@ -147,7 +147,11 @@ const UserSchema = new mongoose.Schema({
   userName: { type: String, default: "New User" },
   password: String, // Passwords should always be provided explicitly and hashed
   joinDate: { type: Date, default: Date.now },
-  avatarImage: { type: String, default: "avatars/avatarImage.jpg" }, // Automatically set the join date to the current date
+  avatarImage: {
+    type: String,
+    default:
+      "https://static.vecteezy.com/system/resources/previews/009/734/564/non_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg",
+  }, // Automatically set the join date to the current date
   rank: { type: String, default: "Explorer" }, // Default user ranks Explorer, Adventurer, Trailblazer
   points: { type: Number, default: 0 }, // Start points at 0
   email: String, // Email should be provided explicitly if required
@@ -332,6 +336,7 @@ app.get("/places/:id", async (req, res) => {
           "comments.rankImage": "$comments.userDetails.rankImage",
           "comments.avatarImage": "$comments.userDetails.avatarImage",
           "comments.contribution": "$comments.userDetails.contribution",
+          "comments.userID": "$comments.userDetails._id",
         },
       },
       {
@@ -375,7 +380,7 @@ app.get("/places/:id", async (req, res) => {
                 },
               ],
               default: {
-                location: { $avg: "$comments.location" },
+                locationRate: { $avg: "$comments.location" },
                 service: { $avg: "$comments.service" },
                 facilities: { $avg: "$comments.facilities" },
                 roomQuality: { $avg: "$comments.roomQuality" },
@@ -952,4 +957,45 @@ app.post("/api/add_trip", async (req, res) => {
   }
 });
 
+app.get("/UserSystem/:id", async (req, res) => {
+  const id = req.params.id;
+
+  try {
+    const user = await User.findById(id)
+      .populate({
+        path: "reviewComments",
+        populate: { path: "placeID", model: "Place" }, // Populate the place details in each comment
+      })
+      .populate("photos"); // Populate the photos related to the user
+
+    if (!user) {
+      return res.status(404).send({ message: "User not found" });
+    }
+
+    res.send(user);
+  } catch (error) {
+    res.status(500).send({ message: "Server error" });
+  }
+});
+
+app.patch("/UserSystem/:id", async (req, res) => {
+  const { id } = req.params;
+  const { name, userName, description, avatarImage } = req.body; // Receive the new values from the request body
+
+  try {
+    const user = await User.findByIdAndUpdate(
+      id,
+      { name, userName, description, avatarImage },
+      { new: true, runValidators: true } // Return the updated object and ensure validators are run
+    );
+
+    if (!user) {
+      return res.status(404).send({ message: "User not found" });
+    }
+
+    res.send(user);
+  } catch (error) {
+    res.status(500).send({ message: "Server error" });
+  }
+});
 app.listen(4000, () => console.log("App listening on port 4000!"));
