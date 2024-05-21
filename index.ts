@@ -379,14 +379,15 @@ app.get("/places/:id", async (req: Request, res: Response) => {
         },
       },
     ]);
+    Math;
 
     // Step 4: Calculate average ratings and other fields
-    const rate =
+    const rate = Math.round(
       comments.length > 0
         ? comments.reduce((acc, comment) => acc + comment.rate, 0) /
-          comments.length
-        : 0;
-
+            comments.length
+        : 0 * 10
+    );
     const subRatings: Record<string, number> = {
       locationRate:
         comments.length > 0
@@ -424,6 +425,11 @@ app.get("/places/:id", async (req: Request, res: Response) => {
       subRatings.staff =
         comments.length > 0
           ? comments.reduce((acc, comment) => acc + comment.staff, 0) /
+            comments.length
+          : 0;
+      subRatings.safety =
+        comments.length > 0
+          ? comments.reduce((acc, comment) => acc + comment.safety, 0) /
             comments.length
           : 0;
     } else if (place.category === "thingsToEat") {
@@ -795,39 +801,54 @@ app.get("/user/trips/:id", async (req, res) => {
 app.post("/trips", async (req, res) => {
   const { userid, tripName, region, days, description } = req.body;
   console.log("Request body of createTripForm", req.body);
+
   // Validate incoming data (basic example)
   if (!userid || !tripName || !region || !days || !description) {
     return res.status(400).send({ message: "All fields are required" });
   }
 
   try {
-    // Create a new trip instance
+    let likedPlaces: any[] = [];
+
+    // Create an empty days array with the structure needed
+    const daysArray = Array.from({ length: days }, () => []);
+
+    // Simplified cleaning of userId assuming it's a direct ObjectId string
+    const userObjectId = userid;
+
+    console.log("User ID", userObjectId);
+
     const trip = new Trip({
-      userID: userid,
       tripName,
       region,
-      totalDays: days,
+      days: daysArray,
       description,
-      days: Array.from({ length: days }, () => []),
+      totalDays: days,
+      userID: userObjectId,
+      likedPlaces,
+      imageTrip:
+        "https://media-cdn.tripadvisor.com/media/attractions-splice-spp-720x480/10/4e/8e/2e.jpg",
     });
 
-    // Save the trip to the database
     const savedTrip = await trip.save();
+    console.log("Trip saved successfully", savedTrip._id);
 
-    // Update the user's trips list
-    const updatedUser = await User.findByIdAndUpdate(
-      userid,
+    User.findByIdAndUpdate(
+      userObjectId,
       { $push: { trips: savedTrip._id } },
       { new: true }
-    );
-
-    console.log("Trip saved in user", updatedUser);
-
-    // Send the saved trip as a response
-    res.send({ trip: savedTrip });
-  } catch (error) {
-    console.error("Error creating trip", error);
-    res.status(500).send({ message: "Failed to create trip" });
+    )
+      .then((user) => {
+        res.json({ tripID: savedTrip._id });
+        console.log("Trip saved in user", user);
+      })
+      .catch((err) => {
+        console.error("Error updating user with trip:", err);
+        res.status(500).send("Failed to update user with trip");
+      });
+  } catch (err) {
+    console.error("Error processing request", err);
+    res.status(500).send("Failed to save trip due to server error");
   }
 });
 
@@ -881,6 +902,30 @@ app.post("/trip/search", async (req, res) => {
     console.error("Error searching places:", error);
     res.status(500).send({ message: "Internal server error" });
   }
+});
+
+app.post("/trip/delete/:id", async (req, res) => {
+  const { id } = req.params;
+  const { userID } = req.body;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).send({ message: "Invalid trip ID." });
+  }
+  User.findByIdAndUpdate(userID, { $pull: { trips: id } }, { new: true })
+    .then(() => {
+      Trip.findByIdAndDelete(id)
+        .then(() => {
+          res.send("Trip deleted successfully");
+        })
+        .catch((err) => {
+          console.error("Error deleting trip:", err);
+          res.status(500).send("Failed to delete trip");
+        });
+    })
+    .catch((err) => {
+      console.error("Error deleting trip:", err);
+      res.status(500).send("Failed to delete trip");
+    });
 });
 
 app.post("/trip/places/addLiked", async (req, res) => {
@@ -1156,4 +1201,59 @@ app.patch("/UserSystem/:id", async (req, res) => {
     res.status(500).send({ message: "Server error" });
   }
 });
+
+app.get("/setrunningTrip/:id", async (req, res) => {
+  const id = req.params.id;
+
+  // Validate the id parameter
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).send({ message: "Invalid trip ID" });
+  }
+
+  try {
+    const trip = await Trip.findById(id);
+    if (!trip) {
+      return res.status(404).send({ message: "Trip not found" });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      trip.userID,
+      { runningTrip: trip._id },
+      { new: true }
+    );
+    if (!user) {
+      return res.status(404).send({ message: "User not found" });
+    }
+
+    console.log("Running trip set successfully", trip);
+
+    res.send(trip);
+  } catch (err) {
+    console.error("Error fetching the trip or updating the user:", err);
+    res.status(500).send({ message: "Internal server error" });
+  }
+});
+
+app.post("/purchase", (req, res) => {
+  const { userId, total } = req.body;
+  User.findByIdAndUpdate(
+    userId,
+    { $inc: { points: -total } },
+    { new: true }
+  ).then((user) => {
+    res.json(user);
+  });
+});
+
+app.post("/terminateTrip", (req, res) => {
+  const { userId } = req.body;
+  User.findByIdAndUpdate(
+    userId,
+    { runningTrip: "No active trip" },
+    { new: true }
+  ).then((user) => {
+    res.json(user);
+  });
+});
+
 app.listen(4000, () => console.log("App listening on port 4000!"));
